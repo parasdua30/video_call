@@ -45,6 +45,12 @@ export function useLocalMedia() {
   }, []);
 
   const requestPermissions = useCallback(async () => {
+    if (stream?.getTracks().some((track) => track.readyState === "live")) {
+      setPermissionState("granted");
+      syncTrackState(stream);
+      return stream;
+    }
+
     setPermissionState("requesting");
     setError("");
 
@@ -62,7 +68,7 @@ export function useLocalMedia() {
       syncTrackState(emptyStream);
       return emptyStream;
     }
-  }, [syncTrackState]);
+  }, [stream, syncTrackState]);
 
   const toggleAudio = useCallback(async () => {
     const activeStream = stream ?? (await requestPermissions());

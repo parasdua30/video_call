@@ -12,6 +12,11 @@ const initialState = {
   error: ""
 };
 
+const getMediaPayload = (stream, fallback) => ({
+  isAudioEnabled: stream?.getAudioTracks()[0]?.enabled ?? fallback.isAudioEnabled,
+  isVideoEnabled: stream?.getVideoTracks()[0]?.enabled ?? fallback.isVideoEnabled
+});
+
 export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEnded }) {
   const [state, setState] = useState(initialState);
   const [remoteStreams, setRemoteStreams] = useState(new Map());
@@ -265,11 +270,12 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
   }, [mediaState, state.status]);
 
   const createMeeting = useCallback(
-    async (name = "You") => {
+    async (name = "You", activeStream = localStreamRef.current) => {
+      localStreamRef.current = activeStream;
       setState((current) => ({ ...current, status: "creating", error: "" }));
       const data = await meetingSocket.emitWithAck("meeting:create", {
         name,
-        media: mediaState
+        media: getMediaPayload(activeStream, mediaState)
       });
 
       selfRef.current = data.self;
@@ -287,14 +293,15 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
   );
 
   const requestJoin = useCallback(
-    async ({ code, name }) => {
+    async ({ code, name, activeStream = localStreamRef.current }) => {
       const meetingCode = normalizeMeetingCode(code);
+      localStreamRef.current = activeStream;
       setState((current) => ({ ...current, status: "requesting", error: "" }));
 
       const data = await meetingSocket.emitWithAck("meeting:request-join", {
         code: meetingCode,
         name,
-        media: mediaState
+        media: getMediaPayload(activeStream, mediaState)
       });
 
       selfRef.current = data.self;

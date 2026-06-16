@@ -61,10 +61,10 @@ export default function App() {
 
   const handleCreateMeeting = async () => {
     setBanner("");
-    await localMedia.requestPermissions();
+    const stream = await localMedia.requestPermissions();
 
     try {
-      const data = await meeting.createMeeting("You");
+      const data = await meeting.createMeeting("You", stream);
       navigate({ view: "meeting", code: data.meeting.code }, `/meeting/${data.meeting.code}`);
     } catch (error) {
       setBanner(error.message);
@@ -84,12 +84,13 @@ export default function App() {
 
   const handleAskToJoin = async () => {
     setBanner("");
-    await localMedia.requestPermissions();
+    const stream = await localMedia.requestPermissions();
 
     try {
       await meeting.requestJoin({
         code: route.code,
-        name: guestName.trim()
+        name: guestName.trim(),
+        activeStream: stream
       });
     } catch (error) {
       setBanner(error.message);
