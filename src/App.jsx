@@ -125,10 +125,15 @@ export default function App() {
         waiting={meeting.waiting}
         localStream={localMedia.stream}
         remoteStreams={meeting.remoteStreams}
+        localPresentationStream={meeting.localPresentationStream}
+        presentationStreams={meeting.presentationStreams}
         mediaState={localMedia.mediaState}
+        isPresenting={meeting.isPresenting}
         isHost={meeting.isHost}
         onToggleAudio={localMedia.toggleAudio}
         onToggleVideo={localMedia.toggleVideo}
+        onStartPresentation={meeting.startPresentation}
+        onStopPresentation={meeting.stopPresentation}
         onLeave={handleLeave}
         onAdmit={meeting.admitParticipant}
         onDeny={meeting.denyParticipant}

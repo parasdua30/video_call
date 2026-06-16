@@ -1,5 +1,5 @@
-import { Search, UserPlus, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { MonitorUp, Search, UserPlus, Volume2, VolumeX, X } from "lucide-react";
+import { Fragment, useMemo, useState } from "react";
 import { Avatar } from "./Avatar.jsx";
 import { formatParticipantName } from "../utils/participant.js";
 
@@ -23,6 +23,7 @@ export function PeoplePanel({
 
     return participants.filter((participant) => participant.name.toLowerCase().includes(normalizedQuery));
   }, [normalizedQuery, participants]);
+  const contributorCount = participants.length + participants.filter((participant) => participant.isScreenSharing).length;
 
   return (
     <aside className={`people-panel ${open ? "is-open" : ""}`} aria-label="People">
@@ -82,16 +83,32 @@ export function PeoplePanel({
         <div className="people-list">
           <div className="people-list-title">
             <strong>Contributors</strong>
-            <span>{participants.length}</span>
+            <span>{contributorCount}</span>
           </div>
           {visibleParticipants.map((participant) => (
-            <div className="person-row" key={participant.id}>
-              <Avatar name={participant.name} initials={participant.initials} />
-              <div>
-                <strong>{formatParticipantName(participant, selfId)}</strong>
-                <span>{participant.isHost ? "Meeting host" : "Guest"}</span>
+            <Fragment key={participant.id}>
+              <div className="person-row">
+                <Avatar name={participant.name} initials={participant.initials} />
+                <div>
+                  <strong>{formatParticipantName(participant, selfId)}</strong>
+                  <span>{participant.isHost ? "Meeting host" : "Guest"}</span>
+                </div>
               </div>
-            </div>
+              {participant.isScreenSharing ? (
+                <div className="person-row presentation-person-row">
+                  <span className="presentation-person-icon">
+                    <MonitorUp size={20} />
+                  </span>
+                  <div>
+                    <strong>{participant.id === selfId ? "Your presentation" : `${participant.name}'s presentation`}</strong>
+                    <span>{participant.hasPresentationAudio ? "Presentation audio" : "Presentation"}</span>
+                  </div>
+                  <span className="person-row-status-icon" aria-label={participant.hasPresentationAudio ? "Presentation audio on" : "Presentation audio off"}>
+                    {participant.hasPresentationAudio ? <Volume2 size={20} /> : <VolumeX size={20} />}
+                  </span>
+                </div>
+              ) : null}
+            </Fragment>
           ))}
         </div>
       </section>

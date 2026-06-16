@@ -20,9 +20,15 @@ const getMediaPayload = (stream, fallback) => ({
 export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEnded }) {
   const [state, setState] = useState(initialState);
   const [remoteStreams, setRemoteStreams] = useState(new Map());
+  const [presentationStreams, setPresentationStreams] = useState(new Map());
+  const [localPresentationStream, setLocalPresentationStream] = useState(null);
   const peerConnections = useRef(new Map());
+  const presentationSendPeerConnections = useRef(new Map());
+  const presentationReceivePeerConnections = useRef(new Map());
   const remoteStreamsRef = useRef(new Map());
+  const presentationStreamsRef = useRef(new Map());
   const localStreamRef = useRef(localStream);
+  const localPresentationStreamRef = useRef(null);
   const selfRef = useRef(null);
   const meetingCodeRef = useRef("");
 
@@ -62,6 +68,67 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
     remoteStreamsRef.current.clear();
     setRemoteStreams(new Map());
   }, []);
+
+  const closePresentationSendPeerConnection = useCallback((participantId) => {
+    const peerConnection = presentationSendPeerConnections.current.get(participantId);
+    if (peerConnection) {
+      peerConnection.onconnectionstatechange = null;
+      peerConnection.onicecandidate = null;
+      peerConnection.close();
+      presentationSendPeerConnections.current.delete(participantId);
+    }
+  }, []);
+
+  const closePresentationReceivePeerConnection = useCallback((participantId, { removeStream = false } = {}) => {
+    const peerConnection = presentationReceivePeerConnections.current.get(participantId);
+    if (peerConnection) {
+      peerConnection.onconnectionstatechange = null;
+      peerConnection.onicecandidate = null;
+      peerConnection.ontrack = null;
+      peerConnection.close();
+      presentationReceivePeerConnections.current.delete(participantId);
+    }
+
+    if (removeStream) {
+      presentationStreamsRef.current.delete(participantId);
+      setPresentationStreams(new Map(presentationStreamsRef.current));
+    }
+  }, []);
+
+  const cleanupLocalPresentationPeerConnections = useCallback(() => {
+    presentationSendPeerConnections.current.forEach((peerConnection) => peerConnection.close());
+    presentationSendPeerConnections.current.clear();
+  }, []);
+
+  const cleanupPresentationPeerConnections = useCallback(() => {
+    presentationSendPeerConnections.current.forEach((peerConnection) => peerConnection.close());
+    presentationReceivePeerConnections.current.forEach((peerConnection) => peerConnection.close());
+    presentationSendPeerConnections.current.clear();
+    presentationReceivePeerConnections.current.clear();
+    presentationStreamsRef.current.clear();
+    setPresentationStreams(new Map());
+  }, []);
+
+  const removePresentationForParticipant = useCallback(
+    (participantId) => {
+      closePresentationSendPeerConnection(participantId);
+      closePresentationReceivePeerConnection(participantId, { removeStream: true });
+    },
+    [closePresentationReceivePeerConnection, closePresentationSendPeerConnection]
+  );
+
+  const stopPresentation = useCallback((notifyServer = true) => {
+    const stream = localPresentationStreamRef.current;
+    const hadActivePresentation = Boolean(stream);
+    stream?.getTracks().forEach((track) => track.stop());
+    localPresentationStreamRef.current = null;
+    setLocalPresentationStream(null);
+    cleanupLocalPresentationPeerConnections();
+
+    if (notifyServer && selfRef.current && hadActivePresentation) {
+      meetingSocket.emit("presentation:stopped");
+    }
+  }, [cleanupLocalPresentationPeerConnections]);
 
   const getPeerConnection = useCallback(
     (participantId) => {
@@ -110,6 +177,86 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
     [removePeerConnection]
   );
 
+  const getPresentationSendPeerConnection = useCallback(
+    (participantId) => {
+      const existing = presentationSendPeerConnections.current.get(participantId);
+      if (existing && !isPeerConnectionClosed(existing)) {
+        return existing;
+      }
+
+      const peerConnection = new RTCPeerConnection(ICE_SERVERS);
+
+      peerConnection.onicecandidate = (event) => {
+        if (!event.candidate) {
+          return;
+        }
+
+        meetingSocket.emit("signal:presentation-ice-candidate", {
+          to: participantId,
+          presenterId: selfRef.current?.id,
+          candidate: event.candidate
+        });
+      };
+
+      peerConnection.onconnectionstatechange = () => {
+        if (["closed", "failed", "disconnected"].includes(peerConnection.connectionState)) {
+          closePresentationSendPeerConnection(participantId);
+        }
+      };
+
+      presentationSendPeerConnections.current.set(participantId, peerConnection);
+      return peerConnection;
+    },
+    [closePresentationSendPeerConnection]
+  );
+
+  const getPresentationReceivePeerConnection = useCallback(
+    (participantId, { forceNew = false } = {}) => {
+      if (forceNew) {
+        closePresentationReceivePeerConnection(participantId);
+      }
+
+      const existing = presentationReceivePeerConnections.current.get(participantId);
+      if (existing && !isPeerConnectionClosed(existing)) {
+        return existing;
+      }
+
+      const peerConnection = new RTCPeerConnection(ICE_SERVERS);
+
+      peerConnection.ontrack = (event) => {
+        const [presentationStream] = event.streams;
+        if (!presentationStream) {
+          return;
+        }
+
+        presentationStreamsRef.current.set(participantId, presentationStream);
+        setPresentationStreams(new Map(presentationStreamsRef.current));
+      };
+
+      peerConnection.onicecandidate = (event) => {
+        if (!event.candidate) {
+          return;
+        }
+
+        meetingSocket.emit("signal:presentation-ice-candidate", {
+          to: participantId,
+          presenterId: participantId,
+          candidate: event.candidate
+        });
+      };
+
+      peerConnection.onconnectionstatechange = () => {
+        if (["closed", "failed", "disconnected"].includes(peerConnection.connectionState)) {
+          closePresentationReceivePeerConnection(participantId, { removeStream: true });
+        }
+      };
+
+      presentationReceivePeerConnections.current.set(participantId, peerConnection);
+      return peerConnection;
+    },
+    [closePresentationReceivePeerConnection]
+  );
+
   const startOffer = useCallback(
     async (participantId) => {
       if (!participantId || participantId === selfRef.current?.id) {
@@ -129,6 +276,47 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
       });
     },
     [getPeerConnection]
+  );
+
+  const startPresentationOffer = useCallback(
+    async (participantId) => {
+      const presentationStream = localPresentationStreamRef.current;
+      if (!presentationStream || !participantId || participantId === selfRef.current?.id) {
+        return;
+      }
+
+      let peerConnection = getPresentationSendPeerConnection(participantId);
+      if (peerConnection.signalingState !== "stable") {
+        closePresentationSendPeerConnection(participantId);
+        peerConnection = getPresentationSendPeerConnection(participantId);
+      }
+
+      const existingTrackIds = new Set(
+        peerConnection
+          .getSenders()
+          .map((sender) => sender.track?.id)
+          .filter(Boolean)
+      );
+
+      presentationStream.getTracks().forEach((track) => {
+        if (!existingTrackIds.has(track.id)) {
+          peerConnection.addTrack(track, presentationStream);
+        }
+      });
+
+      if (peerConnection.signalingState !== "stable") {
+        return;
+      }
+
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+      meetingSocket.emit("signal:presentation-offer", {
+        to: participantId,
+        presenterId: selfRef.current?.id,
+        description: peerConnection.localDescription
+      });
+    },
+    [closePresentationSendPeerConnection, getPresentationSendPeerConnection]
   );
 
   const handleOffer = useCallback(
@@ -174,6 +362,75 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
     }
   }, []);
 
+  const handlePresentationOffer = useCallback(
+    async ({ from, description, presenterId }) => {
+      if (!from || !description) {
+        return;
+      }
+
+      const presenter = presenterId ?? from;
+      if (presenter !== from) {
+        return;
+      }
+
+      let peerConnection = getPresentationReceivePeerConnection(presenter);
+      if (peerConnection.signalingState !== "stable") {
+        peerConnection = getPresentationReceivePeerConnection(presenter, { forceNew: true });
+      }
+
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(description));
+      const answer = await peerConnection.createAnswer();
+      await peerConnection.setLocalDescription(answer);
+      meetingSocket.emit("signal:presentation-answer", {
+        to: from,
+        presenterId: presenter,
+        description: peerConnection.localDescription
+      });
+    },
+    [getPresentationReceivePeerConnection]
+  );
+
+  const handlePresentationAnswer = useCallback(async ({ from, description, presenterId }) => {
+    if (presenterId !== selfRef.current?.id) {
+      return;
+    }
+
+    const peerConnection = presentationSendPeerConnections.current.get(from);
+    if (!peerConnection || !description) {
+      return;
+    }
+
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(description));
+  }, []);
+
+  const handlePresentationIceCandidate = useCallback(async ({ from, candidate, presenterId }) => {
+    const peerConnection =
+      presenterId === selfRef.current?.id
+        ? presentationSendPeerConnections.current.get(from)
+        : presentationReceivePeerConnections.current.get(presenterId ?? from);
+
+    if (!peerConnection || !candidate) {
+      return;
+    }
+
+    try {
+      await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch {
+      // Presentation ICE candidates can arrive after presenting has stopped.
+    }
+  }, []);
+
+  const requestPresentationOffer = useCallback((participantId) => {
+    if (!participantId || participantId === selfRef.current?.id || presentationStreamsRef.current.has(participantId)) {
+      return;
+    }
+
+    meetingSocket.emit("presentation:request-offer", {
+      to: participantId,
+      presenterId: participantId
+    });
+  }, []);
+
   useEffect(() => {
     meetingSocket.connect();
 
@@ -183,10 +440,27 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
     const handleParticipantJoined = (payload) => {
       updateStateFromSnapshot(payload);
       startOffer(payload.participant?.id);
+      startPresentationOffer(payload.participant?.id);
     };
     const handleParticipantLeft = (payload) => {
       updateStateFromSnapshot(payload);
       removePeerConnection(payload.participantId);
+      removePresentationForParticipant(payload.participantId);
+    };
+    const handlePresentationStarted = (payload) => {
+      updateStateFromSnapshot(payload);
+      if (payload.participantId !== selfRef.current?.id) {
+        window.setTimeout(() => requestPresentationOffer(payload.participantId), 800);
+      }
+    };
+    const handlePresentationStopped = (payload) => {
+      updateStateFromSnapshot(payload);
+      if (payload.participantId !== selfRef.current?.id) {
+        removePresentationForParticipant(payload.participantId);
+      }
+    };
+    const handlePresentationOfferRequested = ({ from }) => {
+      startPresentationOffer(from);
     };
     const handleAdmitted = (payload) => {
       selfRef.current = payload.self;
@@ -201,6 +475,10 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
     };
     const handleDenied = (payload) => {
       cleanupPeerConnections();
+      cleanupPresentationPeerConnections();
+      localPresentationStreamRef.current?.getTracks().forEach((track) => track.stop());
+      localPresentationStreamRef.current = null;
+      setLocalPresentationStream(null);
       setState((current) => ({
         ...current,
         status: "denied",
@@ -211,6 +489,10 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
     };
     const handleEnded = (payload) => {
       cleanupPeerConnections();
+      cleanupPresentationPeerConnections();
+      localPresentationStreamRef.current?.getTracks().forEach((track) => track.stop());
+      localPresentationStreamRef.current = null;
+      setLocalPresentationStream(null);
       selfRef.current = null;
       meetingCodeRef.current = "";
       setState({
@@ -229,9 +511,15 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
     meetingSocket.on("meeting:admitted", handleAdmitted);
     meetingSocket.on("meeting:denied", handleDenied);
     meetingSocket.on("meeting:ended", handleEnded);
+    meetingSocket.on("presentation:started", handlePresentationStarted);
+    meetingSocket.on("presentation:stopped", handlePresentationStopped);
+    meetingSocket.on("presentation:request-offer", handlePresentationOfferRequested);
     meetingSocket.on("signal:offer", handleOffer);
     meetingSocket.on("signal:answer", handleAnswer);
     meetingSocket.on("signal:ice-candidate", handleIceCandidate);
+    meetingSocket.on("signal:presentation-offer", handlePresentationOffer);
+    meetingSocket.on("signal:presentation-answer", handlePresentationAnswer);
+    meetingSocket.on("signal:presentation-ice-candidate", handlePresentationIceCandidate);
 
     return () => {
       meetingSocket.off("meeting:sync", handleSync);
@@ -242,22 +530,57 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
       meetingSocket.off("meeting:admitted", handleAdmitted);
       meetingSocket.off("meeting:denied", handleDenied);
       meetingSocket.off("meeting:ended", handleEnded);
+      meetingSocket.off("presentation:started", handlePresentationStarted);
+      meetingSocket.off("presentation:stopped", handlePresentationStopped);
+      meetingSocket.off("presentation:request-offer", handlePresentationOfferRequested);
       meetingSocket.off("signal:offer", handleOffer);
       meetingSocket.off("signal:answer", handleAnswer);
       meetingSocket.off("signal:ice-candidate", handleIceCandidate);
+      meetingSocket.off("signal:presentation-offer", handlePresentationOffer);
+      meetingSocket.off("signal:presentation-answer", handlePresentationAnswer);
+      meetingSocket.off("signal:presentation-ice-candidate", handlePresentationIceCandidate);
     };
   }, [
     cleanupPeerConnections,
+    cleanupPresentationPeerConnections,
     handleAnswer,
     handleIceCandidate,
     handleOffer,
+    handlePresentationAnswer,
+    handlePresentationIceCandidate,
+    handlePresentationOffer,
     onAdmitted,
     onDenied,
     onEnded,
     removePeerConnection,
+    removePresentationForParticipant,
+    requestPresentationOffer,
     startOffer,
+    startPresentationOffer,
     updateStateFromSnapshot
   ]);
+
+  useEffect(() => {
+    if (state.status !== "joined" || !selfRef.current) {
+      return undefined;
+    }
+
+    const pendingPresenters = state.participants.filter((participant) => (
+      participant.id !== selfRef.current?.id
+      && participant.isScreenSharing
+      && !presentationStreamsRef.current.has(participant.id)
+    ));
+
+    if (pendingPresenters.length === 0) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      pendingPresenters.forEach((participant) => requestPresentationOffer(participant.id));
+    }, 1200);
+
+    return () => window.clearTimeout(timer);
+  }, [presentationStreams, requestPresentationOffer, state.participants, state.status]);
 
   useEffect(() => {
     if (!selfRef.current || !["joined", "waiting"].includes(state.status)) {
@@ -319,6 +642,56 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
     [mediaState]
   );
 
+  const startPresentation = useCallback(
+    async ({ includeAudio = false } = {}) => {
+      if (localPresentationStreamRef.current) {
+        return localPresentationStreamRef.current;
+      }
+
+      if (!navigator.mediaDevices?.getDisplayMedia) {
+        throw new Error("Screen sharing is not supported in this browser.");
+      }
+
+      const presentationStream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          cursor: "always",
+          displaySurface: "browser"
+        },
+        audio: includeAudio
+      });
+
+      const videoTrack = presentationStream.getVideoTracks()[0];
+      if (!videoTrack) {
+        throw new Error("No screen video track was selected.");
+      }
+
+      localPresentationStreamRef.current = presentationStream;
+      setLocalPresentationStream(presentationStream);
+
+      videoTrack.addEventListener(
+        "ended",
+        () => {
+          stopPresentation(true);
+        },
+        { once: true }
+      );
+
+      const hasAudio = presentationStream.getAudioTracks().length > 0;
+      meetingSocket.emit("presentation:started", {
+        hasAudio
+      });
+
+      state.participants
+        .filter((participant) => participant.id !== selfRef.current?.id)
+        .forEach((participant) => {
+          startPresentationOffer(participant.id);
+        });
+
+      return presentationStream;
+    },
+    [startPresentationOffer, state.participants, stopPresentation]
+  );
+
   const admitParticipant = useCallback(async (participantId) => {
     if (!meetingCodeRef.current) {
       return;
@@ -355,6 +728,8 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
   }, [updateStateFromSnapshot]);
 
   const leaveMeeting = useCallback(async () => {
+    stopPresentation(false);
+
     try {
       await meetingSocket.emitWithAck("meeting:leave", {});
     } catch {
@@ -362,10 +737,11 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
     }
 
     cleanupPeerConnections();
+    cleanupPresentationPeerConnections();
     selfRef.current = null;
     meetingCodeRef.current = "";
     setState(initialState);
-  }, [cleanupPeerConnections]);
+  }, [cleanupPeerConnections, cleanupPresentationPeerConnections, stopPresentation]);
 
   const isHost = useMemo(() => {
     return Boolean(state.self?.isHost);
@@ -375,8 +751,13 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
     ...state,
     isHost,
     remoteStreams,
+    presentationStreams,
+    localPresentationStream,
+    isPresenting: Boolean(localPresentationStream),
     createMeeting,
     requestJoin,
+    startPresentation,
+    stopPresentation,
     admitParticipant,
     admitAll,
     denyParticipant,

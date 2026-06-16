@@ -2,7 +2,9 @@ import { createMeetingCode, normalizeMeetingCode } from "./code.js";
 
 const DEFAULT_MEDIA_STATE = {
   isAudioEnabled: false,
-  isVideoEnabled: false
+  isVideoEnabled: false,
+  isScreenSharing: false,
+  hasPresentationAudio: false
 };
 
 const toInitials = (name) => {
@@ -39,6 +41,8 @@ const serializeParticipant = (participant) => ({
   isHost: participant.isHost,
   isAudioEnabled: Boolean(participant.media.isAudioEnabled),
   isVideoEnabled: Boolean(participant.media.isVideoEnabled),
+  isScreenSharing: Boolean(participant.media.isScreenSharing),
+  hasPresentationAudio: Boolean(participant.media.hasPresentationAudio),
   joinedAt: participant.joinedAt
 });
 
