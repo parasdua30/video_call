@@ -44,6 +44,10 @@ const needsIceRestart = (peerConnection) => {
     || ["disconnected", "failed"].includes(peerConnection?.iceConnectionState);
 };
 
+const hasLivePresentationStream = (stream) => {
+  return Boolean(stream?.getVideoTracks().some((track) => track.readyState === "live"));
+};
+
 export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEnded }) {
   const [state, setState] = useState(initialState);
   const [remoteStreams, setRemoteStreams] = useState(new Map());
@@ -363,7 +367,7 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
   );
 
   const startPresentationOffer = useCallback(
-    async (participantId) => {
+    async (participantId, { iceRestart = false } = {}) => {
       const presentationStream = localPresentationStreamRef.current;
       if (!presentationStream || !participantId || participantId === selfRef.current?.id) {
         return;
@@ -392,7 +396,7 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
         return;
       }
 
-      const offer = await peerConnection.createOffer();
+      const offer = await peerConnection.createOffer({ iceRestart });
       await peerConnection.setLocalDescription(offer);
       meetingSocket.emit("signal:presentation-offer", {
         to: participantId,
@@ -519,8 +523,12 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
     }
   }, []);
 
-  const requestPresentationOffer = useCallback((participantId) => {
-    if (!participantId || participantId === selfRef.current?.id || presentationStreamsRef.current.has(participantId)) {
+  const requestPresentationOffer = useCallback((participantId, { force = false } = {}) => {
+    if (!participantId || participantId === selfRef.current?.id) {
+      return;
+    }
+
+    if (!force && presentationStreamsRef.current.has(participantId)) {
       return;
     }
 
@@ -559,7 +567,7 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
       }
     };
     const handlePresentationOfferRequested = ({ from }) => {
-      startPresentationOffer(from);
+      startPresentationOffer(from, { iceRestart: true });
     };
     const handleMediaOfferRequested = ({ from }) => {
       if (shouldInitiateMediaOffer(from)) {
@@ -723,21 +731,34 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
       return undefined;
     }
 
-    const pendingPresenters = state.participants.filter((participant) => (
+    const remotePresenters = state.participants.filter((participant) => (
       participant.id !== selfRef.current?.id
       && participant.isScreenSharing
-      && !presentationStreamsRef.current.has(participant.id)
     ));
 
-    if (pendingPresenters.length === 0) {
+    if (remotePresenters.length === 0) {
       return undefined;
     }
 
-    const timer = window.setTimeout(() => {
-      pendingPresenters.forEach((participant) => requestPresentationOffer(participant.id));
-    }, 1200);
+    const syncPresentationMesh = () => {
+      remotePresenters.forEach((participant) => {
+        const peerConnection = presentationReceivePeerConnections.current.get(participant.id);
+        const stream = presentationStreamsRef.current.get(participant.id);
+        const shouldRetryPresentation = !hasLivePresentationStream(stream) || needsIceRestart(peerConnection);
 
-    return () => window.clearTimeout(timer);
+        if (shouldRetryPresentation) {
+          requestPresentationOffer(participant.id, { force: true });
+        }
+      });
+    };
+
+    const warmupTimer = window.setTimeout(syncPresentationMesh, 900);
+    const interval = window.setInterval(syncPresentationMesh, 3500);
+
+    return () => {
+      window.clearTimeout(warmupTimer);
+      window.clearInterval(interval);
+    };
   }, [presentationStreams, requestPresentationOffer, state.participants, state.status]);
 
   useEffect(() => {
