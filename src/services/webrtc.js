@@ -6,5 +6,5 @@ export const ICE_SERVERS = {
 };
 
 export const isPeerConnectionClosed = (peerConnection) => {
-  return ["closed", "failed", "disconnected"].includes(peerConnection.connectionState);
+  return ["closed", "failed"].includes(peerConnection.connectionState);
 };

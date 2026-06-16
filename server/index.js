@@ -264,6 +264,10 @@ io.on("connection", (socket) => {
     relaySignal(socket, "signal:ice-candidate", payload);
   });
 
+  socket.on("media:request-offer", (payload = {}) => {
+    relaySignal(socket, "media:request-offer", payload);
+  });
+
   socket.on("signal:presentation-offer", (payload = {}) => {
     relaySignal(socket, "signal:presentation-offer", payload);
   });

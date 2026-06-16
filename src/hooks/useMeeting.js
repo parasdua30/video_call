@@ -17,6 +17,33 @@ const getMediaPayload = (stream, fallback) => ({
   isVideoEnabled: stream?.getVideoTracks()[0]?.enabled ?? fallback.isVideoEnabled
 });
 
+const hasEnabledMedia = (participant) => Boolean(participant?.isAudioEnabled || participant?.isVideoEnabled);
+
+const hasExpectedRemoteMedia = (participant, stream) => {
+  if (!hasEnabledMedia(participant)) {
+    return true;
+  }
+
+  if (!stream) {
+    return false;
+  }
+
+  if (participant.isVideoEnabled && !stream.getVideoTracks().some((track) => track.readyState === "live")) {
+    return false;
+  }
+
+  if (participant.isAudioEnabled && !stream.getAudioTracks().some((track) => track.readyState === "live")) {
+    return false;
+  }
+
+  return true;
+};
+
+const needsIceRestart = (peerConnection) => {
+  return ["disconnected", "failed"].includes(peerConnection?.connectionState)
+    || ["disconnected", "failed"].includes(peerConnection?.iceConnectionState);
+};
+
 export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEnded }) {
   const [state, setState] = useState(initialState);
   const [remoteStreams, setRemoteStreams] = useState(new Map());
@@ -67,6 +94,45 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
     peerConnections.current.clear();
     remoteStreamsRef.current.clear();
     setRemoteStreams(new Map());
+  }, []);
+
+  const shouldInitiateMediaOffer = useCallback((participantId) => {
+    return Boolean(selfRef.current?.id && participantId && selfRef.current.id < participantId);
+  }, []);
+
+  const syncLocalTracksToPeerConnection = useCallback((peerConnection) => {
+    const mediaStream = localStreamRef.current;
+    if (!mediaStream) {
+      return false;
+    }
+
+    let negotiationNeeded = false;
+    const senders = peerConnection.getSenders();
+
+    mediaStream.getTracks().forEach((track) => {
+      const existingSender = senders.find((sender) => sender.track?.kind === track.kind);
+      if (existingSender) {
+        if (existingSender.track !== track) {
+          existingSender.replaceTrack(track).catch(() => {});
+        }
+        return;
+      }
+
+      peerConnection.addTrack(track, mediaStream);
+      negotiationNeeded = true;
+    });
+
+    return negotiationNeeded;
+  }, []);
+
+  const requestMediaOffer = useCallback((participantId) => {
+    if (!participantId || participantId === selfRef.current?.id) {
+      return;
+    }
+
+    meetingSocket.emit("media:request-offer", {
+      to: participantId
+    });
   }, []);
 
   const closePresentationSendPeerConnection = useCallback((participantId) => {
@@ -134,15 +200,13 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
     (participantId) => {
       const existing = peerConnections.current.get(participantId);
       if (existing && !isPeerConnectionClosed(existing)) {
+        syncLocalTracksToPeerConnection(existing);
         return existing;
       }
 
+      existing?.close();
       const peerConnection = new RTCPeerConnection(ICE_SERVERS);
-      const mediaStream = localStreamRef.current;
-
-      mediaStream?.getTracks().forEach((track) => {
-        peerConnection.addTrack(track, mediaStream);
-      });
+      syncLocalTracksToPeerConnection(peerConnection);
 
       peerConnection.ontrack = (event) => {
         const [remoteStream] = event.streams;
@@ -166,15 +230,30 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
       };
 
       peerConnection.onconnectionstatechange = () => {
-        if (["closed", "failed"].includes(peerConnection.connectionState)) {
+        if (peerConnection.connectionState === "closed") {
           removePeerConnection(participantId);
+          return;
+        }
+
+        if (peerConnection.connectionState === "failed") {
+          removePeerConnection(participantId);
+          window.setTimeout(() => requestMediaOffer(participantId), 600);
+          return;
+        }
+
+        if (peerConnection.connectionState === "disconnected") {
+          window.setTimeout(() => {
+            if (needsIceRestart(peerConnections.current.get(participantId))) {
+              requestMediaOffer(participantId);
+            }
+          }, 1400);
         }
       };
 
       peerConnections.current.set(participantId, peerConnection);
       return peerConnection;
     },
-    [removePeerConnection]
+    [removePeerConnection, requestMediaOffer, syncLocalTracksToPeerConnection]
   );
 
   const getPresentationSendPeerConnection = useCallback(
@@ -199,7 +278,7 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
       };
 
       peerConnection.onconnectionstatechange = () => {
-        if (["closed", "failed", "disconnected"].includes(peerConnection.connectionState)) {
+        if (["closed", "failed"].includes(peerConnection.connectionState)) {
           closePresentationSendPeerConnection(participantId);
         }
       };
@@ -246,7 +325,7 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
       };
 
       peerConnection.onconnectionstatechange = () => {
-        if (["closed", "failed", "disconnected"].includes(peerConnection.connectionState)) {
+        if (["closed", "failed"].includes(peerConnection.connectionState)) {
           closePresentationReceivePeerConnection(participantId, { removeStream: true });
         }
       };
@@ -258,24 +337,29 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
   );
 
   const startOffer = useCallback(
-    async (participantId) => {
+    async (participantId, { force = false, iceRestart = false } = {}) => {
       if (!participantId || participantId === selfRef.current?.id) {
         return;
       }
 
-      const peerConnection = getPeerConnection(participantId);
+      if (!force && !shouldInitiateMediaOffer(participantId)) {
+        return;
+      }
+
+      let peerConnection = getPeerConnection(participantId);
       if (peerConnection.signalingState !== "stable") {
         return;
       }
 
-      const offer = await peerConnection.createOffer();
+      syncLocalTracksToPeerConnection(peerConnection);
+      const offer = await peerConnection.createOffer({ iceRestart });
       await peerConnection.setLocalDescription(offer);
       meetingSocket.emit("signal:offer", {
         to: participantId,
         description: peerConnection.localDescription
       });
     },
-    [getPeerConnection]
+    [getPeerConnection, shouldInitiateMediaOffer, syncLocalTracksToPeerConnection]
   );
 
   const startPresentationOffer = useCallback(
@@ -325,7 +409,13 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
         return;
       }
 
-      const peerConnection = getPeerConnection(from);
+      let peerConnection = getPeerConnection(from);
+      if (peerConnection.signalingState !== "stable") {
+        removePeerConnection(from);
+        peerConnection = getPeerConnection(from);
+      }
+
+      syncLocalTracksToPeerConnection(peerConnection);
       await peerConnection.setRemoteDescription(new RTCSessionDescription(description));
       const answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
@@ -334,7 +424,7 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
         description: peerConnection.localDescription
       });
     },
-    [getPeerConnection]
+    [getPeerConnection, removePeerConnection, syncLocalTracksToPeerConnection]
   );
 
   const handleAnswer = useCallback(
@@ -344,9 +434,18 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
         return;
       }
 
-      await peerConnection.setRemoteDescription(new RTCSessionDescription(description));
+      try {
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(description));
+      } catch {
+        removePeerConnection(from);
+        if (shouldInitiateMediaOffer(from)) {
+          window.setTimeout(() => startOffer(from), 600);
+        } else {
+          requestMediaOffer(from);
+        }
+      }
     },
-    []
+    [removePeerConnection, requestMediaOffer, shouldInitiateMediaOffer, startOffer]
   );
 
   const handleIceCandidate = useCallback(async ({ from, candidate }) => {
@@ -462,6 +561,11 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
     const handlePresentationOfferRequested = ({ from }) => {
       startPresentationOffer(from);
     };
+    const handleMediaOfferRequested = ({ from }) => {
+      if (shouldInitiateMediaOffer(from)) {
+        startOffer(from, { iceRestart: true });
+      }
+    };
     const handleAdmitted = (payload) => {
       selfRef.current = payload.self;
       updateStateFromSnapshot(payload);
@@ -517,6 +621,7 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
     meetingSocket.on("signal:offer", handleOffer);
     meetingSocket.on("signal:answer", handleAnswer);
     meetingSocket.on("signal:ice-candidate", handleIceCandidate);
+    meetingSocket.on("media:request-offer", handleMediaOfferRequested);
     meetingSocket.on("signal:presentation-offer", handlePresentationOffer);
     meetingSocket.on("signal:presentation-answer", handlePresentationAnswer);
     meetingSocket.on("signal:presentation-ice-candidate", handlePresentationIceCandidate);
@@ -536,6 +641,7 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
       meetingSocket.off("signal:offer", handleOffer);
       meetingSocket.off("signal:answer", handleAnswer);
       meetingSocket.off("signal:ice-candidate", handleIceCandidate);
+      meetingSocket.off("media:request-offer", handleMediaOfferRequested);
       meetingSocket.off("signal:presentation-offer", handlePresentationOffer);
       meetingSocket.off("signal:presentation-answer", handlePresentationAnswer);
       meetingSocket.off("signal:presentation-ice-candidate", handlePresentationIceCandidate);
@@ -555,9 +661,61 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
     removePeerConnection,
     removePresentationForParticipant,
     requestPresentationOffer,
+    shouldInitiateMediaOffer,
     startOffer,
     startPresentationOffer,
     updateStateFromSnapshot
+  ]);
+
+  useEffect(() => {
+    if (state.status !== "joined" || !selfRef.current) {
+      return undefined;
+    }
+
+    const remoteParticipants = state.participants.filter((participant) => participant.id !== selfRef.current?.id);
+    if (remoteParticipants.length === 0) {
+      return undefined;
+    }
+
+    const syncMediaMesh = () => {
+      remoteParticipants.forEach((participant) => {
+        const peerConnection = peerConnections.current.get(participant.id);
+        if (peerConnection && !isPeerConnectionClosed(peerConnection)) {
+          syncLocalTracksToPeerConnection(peerConnection);
+        }
+
+        const remoteStream = remoteStreamsRef.current.get(participant.id);
+        const shouldRetryMedia = !hasExpectedRemoteMedia(participant, remoteStream) || needsIceRestart(peerConnection);
+
+        if (!shouldRetryMedia) {
+          return;
+        }
+
+        if (shouldInitiateMediaOffer(participant.id)) {
+          startOffer(participant.id, { iceRestart: needsIceRestart(peerConnection) });
+          return;
+        }
+
+        requestMediaOffer(participant.id);
+      });
+    };
+
+    const warmupTimer = window.setTimeout(syncMediaMesh, 700);
+    const interval = window.setInterval(syncMediaMesh, 3500);
+
+    return () => {
+      window.clearTimeout(warmupTimer);
+      window.clearInterval(interval);
+    };
+  }, [
+    mediaState,
+    remoteStreams,
+    requestMediaOffer,
+    shouldInitiateMediaOffer,
+    startOffer,
+    state.participants,
+    state.status,
+    syncLocalTracksToPeerConnection
   ]);
 
   useEffect(() => {
