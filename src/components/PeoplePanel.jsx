@@ -23,7 +23,7 @@ export function PeoplePanel({
 
     return participants.filter((participant) => participant.name.toLowerCase().includes(normalizedQuery));
   }, [normalizedQuery, participants]);
-  const contributorCount = participants.length + participants.filter((participant) => participant.isScreenSharing).length;
+  const participantCount = participants.length + participants.filter((participant) => participant.isScreenSharing).length;
 
   return (
     <aside className={`people-panel ${open ? "is-open" : ""}`} aria-label="People">
@@ -42,7 +42,7 @@ export function PeoplePanel({
         <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search for people" />
       </label>
 
-      {isHost ? (
+      {isHost && waiting.length > 0 ? (
         <section className="people-section">
           <p className="section-kicker">Waiting to join</p>
           <div className="people-list">
@@ -50,30 +50,26 @@ export function PeoplePanel({
               <strong>Waiting to be admitted</strong>
               <span>{waiting.length}</span>
             </div>
-            {waiting.length > 0 ? (
-              <>
-                <button type="button" className="admit-all-button" onClick={onAdmitAll}>
-                  Admit all
-                </button>
-                {waiting.map((participant) => (
-                  <div className="person-row" key={participant.id}>
-                    <Avatar name={participant.name} initials={participant.initials} />
-                    <div>
-                      <strong>{participant.name}</strong>
-                      <span>Waiting</span>
-                    </div>
-                    <button type="button" className="text-action" onClick={() => onAdmit(participant.id)}>
-                      Admit
-                    </button>
-                    <button type="button" className="muted-text-action" onClick={() => onDeny(participant.id)}>
-                      Deny
-                    </button>
+            <button type="button" className="admit-all-button" onClick={onAdmitAll}>
+              Admit all
+            </button>
+            <div className="people-list-scroll">
+              {waiting.map((participant) => (
+                <div className="person-row" key={participant.id}>
+                  <Avatar name={participant.name} initials={participant.initials} />
+                  <div>
+                    <strong>{participant.name}</strong>
+                    <span>Waiting</span>
                   </div>
-                ))}
-              </>
-            ) : (
-              <p className="empty-panel-copy">No one is waiting.</p>
-            )}
+                  <button type="button" className="text-action" onClick={() => onAdmit(participant.id)}>
+                    Admit
+                  </button>
+                  <button type="button" className="muted-text-action" onClick={() => onDeny(participant.id)}>
+                    Deny
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         </section>
       ) : null}
@@ -82,34 +78,36 @@ export function PeoplePanel({
         <p className="section-kicker">In the meeting</p>
         <div className="people-list">
           <div className="people-list-title">
-            <strong>Contributors</strong>
-            <span>{contributorCount}</span>
+            <strong>Participants</strong>
+            <span>{participantCount}</span>
           </div>
-          {visibleParticipants.map((participant) => (
-            <Fragment key={participant.id}>
-              <div className="person-row">
-                <Avatar name={participant.name} initials={participant.initials} />
-                <div>
-                  <strong>{formatParticipantName(participant, selfId)}</strong>
-                  <span>{participant.isHost ? "Meeting host" : "Guest"}</span>
-                </div>
-              </div>
-              {participant.isScreenSharing ? (
-                <div className="person-row presentation-person-row">
-                  <span className="presentation-person-icon">
-                    <MonitorUp size={20} />
-                  </span>
+          <div className="people-list-scroll">
+            {visibleParticipants.map((participant) => (
+              <Fragment key={participant.id}>
+                <div className="person-row">
+                  <Avatar name={participant.name} initials={participant.initials} />
                   <div>
-                    <strong>{participant.id === selfId ? "Your presentation" : `${participant.name}'s presentation`}</strong>
-                    <span>{participant.hasPresentationAudio ? "Presentation audio" : "Presentation"}</span>
+                    <strong>{formatParticipantName(participant, selfId)}</strong>
+                    <span>{participant.isHost ? "Meeting host" : "Guest"}</span>
                   </div>
-                  <span className="person-row-status-icon" aria-label={participant.hasPresentationAudio ? "Presentation audio on" : "Presentation audio off"}>
-                    {participant.hasPresentationAudio ? <Volume2 size={20} /> : <VolumeX size={20} />}
-                  </span>
                 </div>
-              ) : null}
-            </Fragment>
-          ))}
+                {participant.isScreenSharing ? (
+                  <div className="person-row presentation-person-row">
+                    <span className="presentation-person-icon">
+                      <MonitorUp size={20} />
+                    </span>
+                    <div>
+                      <strong>{participant.id === selfId ? "Your presentation" : `${participant.name}'s presentation`}</strong>
+                      <span>{participant.hasPresentationAudio ? "Presentation audio" : "Presentation"}</span>
+                    </div>
+                    <span className="person-row-status-icon" aria-label={participant.hasPresentationAudio ? "Presentation audio on" : "Presentation audio off"}>
+                      {participant.hasPresentationAudio ? <Volume2 size={20} /> : <VolumeX size={20} />}
+                    </span>
+                  </div>
+                ) : null}
+              </Fragment>
+            ))}
+          </div>
         </div>
       </section>
     </aside>

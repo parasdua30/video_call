@@ -600,6 +600,86 @@ button:disabled {
   font-weight: 750;
 }
 
+.modal-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(0 0 0 / 0.58);
+}
+
+.host-leave-dialog {
+  width: min(440px, calc(100vw - 32px));
+  padding: 22px;
+  border: 1px solid var(--dark-border);
+  border-radius: 18px;
+  color: #f1f3f4;
+  background: #202124;
+  box-shadow: 0 24px 80px rgb(0 0 0 / 0.42);
+}
+
+.host-leave-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.host-leave-dialog h2,
+.host-leave-dialog p {
+  margin: 0;
+}
+
+.host-leave-dialog h2 {
+  font-size: 24px;
+  font-weight: 650;
+}
+
+.host-leave-dialog p {
+  margin-top: 16px;
+  color: #c7cacf;
+  line-height: 1.5;
+}
+
+.host-leave-dialog-header button {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 50%;
+  color: #e8eaed;
+  background: transparent;
+}
+
+.host-leave-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.secondary-dialog-button,
+.danger-dialog-button {
+  min-height: 42px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+.secondary-dialog-button {
+  color: #d2e3fc;
+  background: #303134;
+}
+
+.danger-dialog-button {
+  color: #fff;
+  background: #d93025;
+}
+
 .tile-grid-one {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -775,8 +855,11 @@ button:disabled {
   right: 20px;
   bottom: 74px;
   z-index: 25;
+  display: flex;
+  flex-direction: column;
   width: min(400px, calc(100vw - 34px));
   padding: 24px 22px;
+  overflow: hidden;
   border-radius: 18px;
   background: var(--dark-panel);
   color: #f1f3f4;
@@ -845,6 +928,7 @@ button:disabled {
 }
 
 .section-kicker {
+  flex: 0 0 auto;
   margin: 28px 0 14px;
   color: #aeb3b8;
   font-size: 13px;
@@ -853,10 +937,40 @@ button:disabled {
   text-transform: uppercase;
 }
 
+.people-section {
+  min-height: 0;
+}
+
+.people-section:last-of-type {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
 .people-list {
+  min-height: 0;
   overflow: hidden;
   border: 1px solid var(--dark-border);
   border-radius: 18px;
+}
+
+.people-section:last-of-type .people-list {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.people-list-scroll {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.people-list-scroll .person-row {
+  border-bottom: 1px solid var(--dark-border);
+}
+
+.people-list-scroll .person-row:last-child {
+  border-bottom: 0;
 }
 
 .people-list-title,
@@ -877,7 +991,6 @@ button:disabled {
 .person-row {
   grid-template-columns: auto minmax(0, 1fr) auto auto;
   min-height: 88px;
-  border-bottom: 0;
 }
 
 .person-row div:nth-child(2) {

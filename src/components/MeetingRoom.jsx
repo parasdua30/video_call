@@ -70,6 +70,7 @@ export function MeetingRoom({
   const [presentationMenuOpen, setPresentationMenuOpen] = useState(false);
   const [includePresentationAudio, setIncludePresentationAudio] = useState(true);
   const [presentationError, setPresentationError] = useState("");
+  const [hostLeaveDialogOpen, setHostLeaveDialogOpen] = useState(false);
   const meetingCode = meeting?.code || "";
   const selfId = self?.id;
 
@@ -155,6 +156,20 @@ export function MeetingRoom({
     }
   };
 
+  const requestLeave = () => {
+    if (isHost && participants.length > 1) {
+      setHostLeaveDialogOpen(true);
+      return;
+    }
+
+    onLeave({ endForAll: isHost });
+  };
+
+  const leaveAsHost = (endForAll) => {
+    setHostLeaveDialogOpen(false);
+    onLeave({ endForAll });
+  };
+
   return (
     <main className={`meeting-room ${peopleOpen ? "has-panel" : ""} ${hasPresentationTiles ? "has-presentation" : ""}`}>
       <header className="meeting-topbar">
@@ -238,6 +253,30 @@ export function MeetingRoom({
         </div>
       ) : null}
 
+      {hostLeaveDialogOpen ? (
+        <div className="modal-scrim" role="presentation">
+          <section className="host-leave-dialog" role="dialog" aria-modal="true" aria-label="Leave meeting">
+            <div className="host-leave-dialog-header">
+              <h2>Leave meeting?</h2>
+              <button type="button" onClick={() => setHostLeaveDialogOpen(false)} aria-label="Close">
+                <X size={22} />
+              </button>
+            </div>
+            <p>
+              You are the meeting host. You can end the meeting for everyone, or leave and let the next participant become host.
+            </p>
+            <div className="host-leave-actions">
+              <button type="button" className="secondary-dialog-button" onClick={() => leaveAsHost(false)}>
+                Just leave
+              </button>
+              <button type="button" className="danger-dialog-button" onClick={() => leaveAsHost(true)}>
+                End meeting for all
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
       <PeoplePanel
         open={peopleOpen}
         isHost={isHost}
@@ -268,7 +307,7 @@ export function MeetingRoom({
         onToggleAudio={onToggleAudio}
         onToggleVideo={onToggleVideo}
         onTogglePresentation={openPresentationMenu}
-        onLeave={onLeave}
+        onLeave={requestLeave}
         onTogglePeople={() => setPeopleOpen((value) => !value)}
         peopleOpen={peopleOpen}
       />

@@ -97,8 +97,8 @@ export default function App() {
     }
   };
 
-  const handleLeave = async () => {
-    await meeting.leaveMeeting();
+  const handleLeave = async (options) => {
+    await meeting.leaveMeeting(options);
     navigate({ view: "home", code: "" }, "/");
   };
 

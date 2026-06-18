@@ -33,6 +33,11 @@ const createParticipant = ({ socketId, name, role, media }) => ({
   joinedAt: new Date().toISOString()
 });
 
+const setParticipantRole = (participant, role) => {
+  participant.role = role;
+  participant.isHost = role === "host";
+};
+
 const serializeParticipant = (participant) => ({
   id: participant.id,
   name: participant.name,
@@ -152,7 +157,7 @@ export class MeetingStore {
     return context;
   }
 
-  removeSocket(socketId) {
+  removeSocket(socketId, { endForAll = false } = {}) {
     const context = this.findBySocketId(socketId);
     if (!context) {
       return null;
@@ -171,11 +176,27 @@ export class MeetingStore {
     meeting.participants.delete(participant.id);
 
     if (meeting.hostId === participant.id) {
-      this.meetings.delete(meeting.code);
+      if (endForAll || meeting.participants.size === 0) {
+        this.meetings.delete(meeting.code);
+        return {
+          ...context,
+          ended: Boolean(endForAll)
+        };
+      }
+
+      const nextHost = meeting.participants.values().next().value;
+      setParticipantRole(nextHost, "host");
+      meeting.hostId = nextHost.id;
+
       return {
         ...context,
-        ended: true
+        ended: false,
+        newHost: nextHost
       };
+    }
+
+    if (meeting.participants.size === 0) {
+      this.meetings.delete(meeting.code);
     }
 
     return {

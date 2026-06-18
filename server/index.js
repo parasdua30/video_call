@@ -176,9 +176,11 @@ io.on("connection", (socket) => {
     });
   });
 
-  socket.on("meeting:leave", (_payload = {}, callback) => {
+  socket.on("meeting:leave", (payload = {}, callback) => {
     acknowledge(callback, () => {
-      const removal = meetings.removeSocket(socket.id);
+      const removal = meetings.removeSocket(socket.id, {
+        endForAll: Boolean(payload.endForAll)
+      });
       if (!removal) {
         return { left: false };
       }

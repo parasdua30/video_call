@@ -72,12 +72,17 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
       return;
     }
 
+    const participants = snapshot.participants ?? [];
+    const waiting = snapshot.waiting ?? [];
     meetingCodeRef.current = snapshot.meeting.code;
     setState((current) => ({
       ...current,
       meeting: snapshot.meeting,
-      participants: snapshot.participants ?? [],
-      waiting: snapshot.waiting ?? [],
+      self: current.self
+        ? [...participants, ...waiting].find((participant) => participant.id === current.self.id) ?? current.self
+        : current.self,
+      participants,
+      waiting,
       error: ""
     }));
   }, []);
@@ -906,11 +911,13 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
     updateStateFromSnapshot(snapshot);
   }, [updateStateFromSnapshot]);
 
-  const leaveMeeting = useCallback(async () => {
+  const leaveMeeting = useCallback(async ({ endForAll = false } = {}) => {
     stopPresentation(false);
 
     try {
-      await meetingSocket.emitWithAck("meeting:leave", {});
+      await meetingSocket.emitWithAck("meeting:leave", {
+        endForAll
+      });
     } catch {
       // Leaving should still reset the local UI if the server already dropped the socket.
     }
