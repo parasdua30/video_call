@@ -1,4 +1,4 @@
-import { Copy, Info, MessageSquare, MonitorUp, ShieldCheck, Users, Volume2, X } from "lucide-react";
+import { Copy, Info, MonitorUp, Users, Volume2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { meetingLinkFor } from "../utils/meetingCode.js";
 import { ControlBar } from "./ControlBar.jsx";
@@ -290,14 +290,8 @@ export function MeetingRoom({
       />
 
       <div className="meeting-corner-actions" aria-label="Meeting panels">
-        <button type="button" aria-label="Chat">
-          <MessageSquare size={24} />
-        </button>
         <button type="button" aria-label="People" onClick={() => setPeopleOpen(true)}>
           <Users size={24} />
-        </button>
-        <button type="button" aria-label="Host controls">
-          <ShieldCheck size={24} />
         </button>
       </div>
 

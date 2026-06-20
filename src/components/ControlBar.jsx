@@ -1,12 +1,8 @@
 import {
-  Captions,
-  Hand,
   Mic,
   MicOff,
   MonitorUp,
-  MoreVertical,
   PhoneOff,
-  Smile,
   Users,
   Video,
   VideoOff
@@ -46,10 +42,6 @@ export function ControlBar({
           active={isPresenting}
           onClick={onTogglePresentation}
         />
-        <IconButton icon={Smile} label="Reactions" />
-        <IconButton icon={Captions} label="Captions" />
-        <IconButton icon={Hand} label="Raise hand" />
-        <IconButton icon={MoreVertical} label="More options" />
       </div>
       <IconButton icon={PhoneOff} label="Leave call" danger onClick={onLeave} />
       <button
