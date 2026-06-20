@@ -77,12 +77,47 @@ button:disabled {
   line-height: 1.22;
 }
 
+.home-name-field {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 8px 14px;
+  width: min(430px, 100%);
+  margin: 42px auto 0;
+  color: #3c4043;
+  text-align: left;
+}
+
+.home-name-field span {
+  font-size: 17px;
+  font-weight: 620;
+}
+
+.home-name-field input {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-height: 58px;
+  padding: 0 18px;
+  border: 1px solid #80868b;
+  border-radius: 12px;
+  outline-color: var(--blue);
+  color: #202124;
+  background: #fff;
+  font-size: 20px;
+}
+
+.home-name-field small {
+  color: #5f6368;
+  font-size: 14px;
+  font-weight: 560;
+}
+
 .home-actions {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 18px;
-  margin-top: 68px;
+  margin-top: 38px;
   flex-wrap: wrap;
 }
 

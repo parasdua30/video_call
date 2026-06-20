@@ -1,9 +1,10 @@
 import { Keyboard, Video } from "lucide-react";
 import { isMeetingCode, normalizeMeetingCode } from "../utils/meetingCode.js";
 
-export function HomePage({ codeInput, onCodeChange, onJoinCode, onCreateMeeting, isBusy, error }) {
+export function HomePage({ codeInput, displayName = "", onCodeChange, onNameChange, onJoinCode, onCreateMeeting, isBusy, error }) {
   const normalizedCode = normalizeMeetingCode(codeInput);
   const canJoin = isMeetingCode(normalizedCode);
+  const nameLength = displayName.length;
 
   return (
     <main className="home-page">
@@ -11,6 +12,17 @@ export function HomePage({ codeInput, onCodeChange, onJoinCode, onCreateMeeting,
         <p className="product-mark">Meet Clone</p>
         <h1>Video calls and meetings for everyone</h1>
         <p className="home-subtitle">Connect, collaborate, and celebrate from anywhere.</p>
+        <label className="home-name-field">
+          <span>Your name</span>
+          <input
+            value={displayName}
+            maxLength={60}
+            onChange={(event) => onNameChange(event.target.value.slice(0, 60))}
+            placeholder="Your name"
+            aria-label="Your name"
+          />
+          <small>{nameLength}/60</small>
+        </label>
         <div className="home-actions">
           <button className="primary-button new-meeting-button" type="button" onClick={onCreateMeeting} disabled={isBusy}>
             <Video size={23} />

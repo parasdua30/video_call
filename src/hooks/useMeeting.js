@@ -777,11 +777,11 @@ export function useMeeting({ localStream, mediaState, onAdmitted, onDenied, onEn
   }, [mediaState, state.status]);
 
   const createMeeting = useCallback(
-    async (name = "You", activeStream = localStreamRef.current) => {
+    async (name = "", activeStream = localStreamRef.current) => {
       localStreamRef.current = activeStream;
       setState((current) => ({ ...current, status: "creating", error: "" }));
       const data = await meetingSocket.emitWithAck("meeting:create", {
-        name,
+        name: String(name || "").trim(),
         media: getMediaPayload(activeStream, mediaState)
       });
 

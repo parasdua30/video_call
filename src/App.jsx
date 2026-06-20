@@ -9,10 +9,16 @@ import { isMeetingCode, normalizeMeetingCode } from "./utils/meetingCode.js";
 
 const readInitialRoute = () => {
   const [, route, code] = window.location.pathname.split("/");
+
   if ((route === "join" || route === "meeting") && code) {
+    const meetingCode = normalizeMeetingCode(code);
+    if (route === "join") {
+      window.history.replaceState({}, "", `/meeting/${meetingCode}`);
+    }
+
     return {
       view: "prejoin",
-      code: normalizeMeetingCode(code)
+      code: meetingCode
     };
   }
 
@@ -52,19 +58,29 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (guestName.trim()) {
-      localStorage.setItem("meetClone.displayName", guestName.trim());
+    const displayName = guestName.trim();
+    if (displayName) {
+      localStorage.setItem("meetClone.displayName", displayName);
+      return;
     }
+
+    localStorage.removeItem("meetClone.displayName");
   }, [guestName]);
 
   const appError = useMemo(() => meeting.error || banner, [banner, meeting.error]);
 
   const handleCreateMeeting = async () => {
+    const hostName = guestName.trim();
+    if (!hostName) {
+      setBanner("Enter your name to start the meeting.");
+      return;
+    }
+
     setBanner("");
     const stream = await localMedia.requestPermissions();
 
     try {
-      const data = await meeting.createMeeting("You", stream);
+      const data = await meeting.createMeeting(hostName, stream);
       navigate({ view: "meeting", code: data.meeting.code }, `/meeting/${data.meeting.code}`);
     } catch (error) {
       setBanner(error.message);
@@ -79,7 +95,7 @@ export default function App() {
     }
 
     setBanner("");
-    navigate({ view: "prejoin", code: meetingCode }, `/join/${meetingCode}`);
+    navigate({ view: "prejoin", code: meetingCode }, `/meeting/${meetingCode}`);
   };
 
   const handleAskToJoin = async () => {
@@ -152,7 +168,7 @@ export default function App() {
         onAllowMedia={localMedia.requestPermissions}
         onToggleAudio={localMedia.toggleAudio}
         onToggleVideo={localMedia.toggleVideo}
-        onAskToJoin={handleAskToJoin}
+        onContinue={handleAskToJoin}
         isBusy={meeting.status === "requesting"}
         error={appError}
       />
@@ -162,10 +178,12 @@ export default function App() {
   return (
     <HomePage
       codeInput={codeInput}
+      displayName={guestName}
       onCodeChange={(value) => {
         setBanner("");
         setCodeInput(value);
       }}
+      onNameChange={setGuestName}
       onJoinCode={handleJoinCode}
       onCreateMeeting={handleCreateMeeting}
       isBusy={meeting.status === "creating"}

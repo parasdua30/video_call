@@ -10,13 +10,18 @@ export function PreJoinPage({
   onAllowMedia,
   onToggleAudio,
   onToggleVideo,
-  onAskToJoin,
+  onContinue,
+  actionLabel = "Ask to join",
+  busyLabel = "Asking...",
+  contextLabel,
+  showOtherWays = true,
   isBusy,
   error
 }) {
-  const canAskToJoin = name.trim().length > 0 && !isBusy;
+  const canContinue = name.trim().length > 0 && !isBusy;
   const hasVideo = Boolean(media.stream && media.mediaState.isVideoEnabled);
   const nameLength = name.length;
+  const meetingLabel = contextLabel || `Meeting ${code}`;
 
   return (
     <main className="prejoin-page">
@@ -49,7 +54,7 @@ export function PreJoinPage({
       </section>
 
       <section className="prejoin-form">
-        <p className="prejoin-code">Meeting {code}</p>
+        <p className="prejoin-code">{meetingLabel}</p>
         <h2>What's your name?</h2>
         <label className="name-field">
           <input
@@ -63,12 +68,14 @@ export function PreJoinPage({
         </label>
         {error ? <p className="inline-error">{error}</p> : null}
         {media.error ? <p className="soft-warning">{media.error}</p> : null}
-        <button className="ask-join-button" type="button" onClick={onAskToJoin} disabled={!canAskToJoin}>
-          {isBusy ? "Asking..." : "Ask to join"}
+        <button className="ask-join-button" type="button" onClick={onContinue} disabled={!canContinue}>
+          {isBusy ? busyLabel : actionLabel}
         </button>
-        <button className="other-ways-button" type="button">
-          Other ways to join <ChevronDown size={18} />
-        </button>
+        {showOtherWays ? (
+          <button className="other-ways-button" type="button">
+            Other ways to join <ChevronDown size={18} />
+          </button>
+        ) : null}
       </section>
 
       <div className="device-row" aria-label="Device permissions">
