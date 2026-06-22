@@ -348,6 +348,6 @@ if (isProduction) {
   app.use(viteServer.middlewares);
 }
 
-server.listen(port, () => {
+server.listen(port, "0.0.0.0", () => {
   console.log(`Meet clone running at http://localhost:${port}`);
 });
