@@ -1,12 +1,8 @@
 import {
-  Captions,
-  Hand,
   Mic,
   MicOff,
   MonitorUp,
-  MoreVertical,
   PhoneOff,
-  Smile,
   Users,
   Video,
   VideoOff
@@ -15,8 +11,10 @@ import { IconButton } from "./IconButton.jsx";
 
 export function ControlBar({
   mediaState,
+  isPresenting,
   onToggleAudio,
   onToggleVideo,
+  onTogglePresentation,
   onLeave,
   onTogglePeople,
   peopleOpen
@@ -38,11 +36,12 @@ export function ControlBar({
         />
       </div>
       <div className="control-group control-group-secondary">
-        <IconButton icon={MonitorUp} label="Present now" />
-        <IconButton icon={Smile} label="Reactions" />
-        <IconButton icon={Captions} label="Captions" />
-        <IconButton icon={Hand} label="Raise hand" />
-        <IconButton icon={MoreVertical} label="More options" />
+        <IconButton
+          icon={MonitorUp}
+          label={isPresenting ? "Stop presenting" : "Present now"}
+          active={isPresenting}
+          onClick={onTogglePresentation}
+        />
       </div>
       <IconButton icon={PhoneOff} label="Leave call" danger onClick={onLeave} />
       <button

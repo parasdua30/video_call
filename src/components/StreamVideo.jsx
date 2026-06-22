@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-export function StreamVideo({ stream, muted = false }) {
+export function StreamVideo({ stream, muted = false, className = "" }) {
   const videoRef = useRef(null);
 
   useEffect(() => {
@@ -15,7 +15,7 @@ export function StreamVideo({ stream, muted = false }) {
       autoPlay
       playsInline
       muted={muted}
-      className="stream-video"
+      className={`stream-video ${className}`}
     />
   );
 }

@@ -176,9 +176,11 @@ io.on("connection", (socket) => {
     });
   });
 
-  socket.on("meeting:leave", (_payload = {}, callback) => {
+  socket.on("meeting:leave", (payload = {}, callback) => {
     acknowledge(callback, () => {
-      const removal = meetings.removeSocket(socket.id);
+      const removal = meetings.removeSocket(socket.id, {
+        endForAll: Boolean(payload.endForAll)
+      });
       if (!removal) {
         return { left: false };
       }
@@ -191,6 +193,12 @@ io.on("connection", (socket) => {
       } else if (removal.status === "waiting") {
         emitMeetingSync(removal.code);
       } else {
+        if (removal.participant.media.isScreenSharing) {
+          io.to(removal.code).emit("presentation:stopped", {
+            participantId: removal.participant.id,
+            ...meetings.getSnapshot(removal.code)
+          });
+        }
         notifyParticipantLeft(removal.code, removal.participant);
       }
 
@@ -209,6 +217,43 @@ io.on("connection", (socket) => {
     }
   });
 
+  socket.on("presentation:started", (payload = {}) => {
+    const context = meetings.updateMedia({
+      socketId: socket.id,
+      media: {
+        isScreenSharing: true,
+        hasPresentationAudio: Boolean(payload.hasAudio)
+      }
+    });
+
+    if (context?.status === "admitted") {
+      const snapshot = meetings.getSnapshot(context.code);
+      io.to(context.code).emit("presentation:started", {
+        participantId: socket.id,
+        hasAudio: Boolean(payload.hasAudio),
+        ...snapshot
+      });
+    }
+  });
+
+  socket.on("presentation:stopped", () => {
+    const context = meetings.updateMedia({
+      socketId: socket.id,
+      media: {
+        isScreenSharing: false,
+        hasPresentationAudio: false
+      }
+    });
+
+    if (context?.status === "admitted") {
+      const snapshot = meetings.getSnapshot(context.code);
+      io.to(context.code).emit("presentation:stopped", {
+        participantId: socket.id,
+        ...snapshot
+      });
+    }
+  });
+
   socket.on("signal:offer", (payload = {}) => {
     relaySignal(socket, "signal:offer", payload);
   });
@@ -219,6 +264,26 @@ io.on("connection", (socket) => {
 
   socket.on("signal:ice-candidate", (payload = {}) => {
     relaySignal(socket, "signal:ice-candidate", payload);
+  });
+
+  socket.on("media:request-offer", (payload = {}) => {
+    relaySignal(socket, "media:request-offer", payload);
+  });
+
+  socket.on("signal:presentation-offer", (payload = {}) => {
+    relaySignal(socket, "signal:presentation-offer", payload);
+  });
+
+  socket.on("signal:presentation-answer", (payload = {}) => {
+    relaySignal(socket, "signal:presentation-answer", payload);
+  });
+
+  socket.on("signal:presentation-ice-candidate", (payload = {}) => {
+    relaySignal(socket, "signal:presentation-ice-candidate", payload);
+  });
+
+  socket.on("presentation:request-offer", (payload = {}) => {
+    relaySignal(socket, "presentation:request-offer", payload);
   });
 
   socket.on("disconnect", () => {
@@ -234,6 +299,12 @@ io.on("connection", (socket) => {
     } else if (removal.status === "waiting") {
       emitMeetingSync(removal.code);
     } else {
+      if (removal.participant.media.isScreenSharing) {
+        io.to(removal.code).emit("presentation:stopped", {
+          participantId: removal.participant.id,
+          ...meetings.getSnapshot(removal.code)
+        });
+      }
       notifyParticipantLeft(removal.code, removal.participant);
     }
   });
@@ -252,6 +323,7 @@ function relaySignal(socket, eventName, payload) {
 
   io.to(targetId).emit(eventName, {
     from: socket.id,
+    presenterId: payload.presenterId,
     description: payload.description,
     candidate: payload.candidate
   });
@@ -276,6 +348,6 @@ if (isProduction) {
   app.use(viteServer.middlewares);
 }
 
-server.listen(port, () => {
+server.listen(port, "0.0.0.0", () => {
   console.log(`Meet clone running at http://localhost:${port}`);
 });

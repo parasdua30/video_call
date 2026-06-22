@@ -8,5 +8,5 @@ export const isMeetingCode = (value = "") => {
 };
 
 export const meetingLinkFor = (code) => {
-  return `${window.location.origin}/join/${normalizeMeetingCode(code)}`;
+  return `${window.location.origin}/meeting/${normalizeMeetingCode(code)}`;
 };
