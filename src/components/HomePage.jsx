@@ -9,7 +9,7 @@ export function HomePage({ codeInput, displayName = "", onCodeChange, onNameChan
   return (
     <main className="home-page">
       <section className="home-content">
-        <p className="product-mark">Meet Clone</p>
+        <p className="product-mark">Meet &amp; Greet</p>
         <h1>Video calls and meetings for everyone</h1>
         <p className="home-subtitle">Connect, collaborate, and celebrate from anywhere.</p>
         <label className="home-name-field">
