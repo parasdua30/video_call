@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: meet-clone-webrtc
+    name: video_call_p2p
     runtime: node
     plan: free
     buildCommand: npm install --include=dev && npm run build
